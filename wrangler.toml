@@ -17,6 +17,14 @@ zone_name = "freeappstore.online"
 binding = "APPS"
 bucket_name = "fas-apps"
 
+# Service binding to the backend Worker. The catch-all *.freeappstore.online/*
+# route preempts api.freeappstore.online's own Worker custom_domain binding,
+# so this Worker has to explicitly dispatch api.* traffic to the backend.
+# Worker-to-worker service binding bypasses the public network entirely.
+[[services]]
+binding = "API"
+service = "freeappstore-api"
+
 # Reuses the existing fas D1 database (same one admin uses). The new `routes`
 # table lives alongside whatever else is in there; the schema is in
 # migrations/0001_create_routes.sql.

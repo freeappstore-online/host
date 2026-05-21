@@ -11,12 +11,57 @@
 
 import { contentType, type Env, type Route, r2KeyFor, resolveRoute } from "./host";
 
+/**
+ * Platform-infra subdomains: NOT apps. The wildcard route catches them just
+ * like apps, but their fallback targets don't follow the `free<slug>app`
+ * naming convention. Each one is dispatched explicitly:
+ *
+ *  - `service` → Worker-to-Worker via service binding (zero public hop)
+ *  - `proxy`   → fetch() to a specific *.pages.dev URL (for CF Pages-hosted infra)
+ *  - `unmapped`→ return a clean 502 with "this needs ops attention" instead of
+ *                a misleading DNS error for guessed-wrong project names
+ *
+ * If you add a new platform subdomain, add a row here AND add the matching
+ * [[services]] entry in wrangler.toml when type=service.
+ *
+ * `admin.freeappstore.online/*` is NOT in this map — that Worker has a more
+ * specific route pattern (exact host + path glob), which beats `*.<zone>/*`
+ * in CF's matching, so traffic skips this Worker entirely.
+ */
+type PlatformDispatch =
+  | { type: "service"; binding: keyof Env }
+  | { type: "proxy"; target: string }
+  | { type: "unmapped" };
+
+const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
+  api: { type: "service", binding: "API" },
+  compliance: { type: "proxy", target: "https://compliance.pages.dev" },
+  publisher: { type: "proxy", target: "https://publisher.pages.dev" },
+  submissions: { type: "proxy", target: "https://submissions.pages.dev" },
+  agent: { type: "proxy", target: "https://agent.pages.dev" },
+  create: { type: "proxy", target: "https://freeappstore-create.pages.dev" },
+  www: { type: "unmapped" },
+  auth: { type: "unmapped" },
+};
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const host = req.headers.get("host") ?? url.host;
 
-    // Path B route first — if the slug is registered in D1, serve from R2.
+    // Slug parsing — needed for both reserved dispatch and route lookup.
+    const cleaned = host.toLowerCase().split(":")[0];
+    const dot = cleaned.indexOf(".");
+    const slug = dot > 0 ? cleaned.slice(0, dot) : "";
+
+    // Platform-infra subdomains short-circuit before app routing. They use
+    // different naming than apps, so the legacy app-fallback would send them
+    // to a non-existent CF Pages project (real bug we hit on 2026-05-21).
+    if (slug in PLATFORM_SUBDOMAINS) {
+      return await dispatchPlatform(req, env, slug, host);
+    }
+
+    // Path B route — if the slug is registered in D1, serve from R2.
     const route = await resolveRoute(env.DB, host);
     if (route) return await serve(env.APPS, route, url, req.method, ctx);
 
@@ -27,6 +72,42 @@ export default {
     return await legacyFallback(req, host);
   },
 };
+
+/**
+ * Dispatch a request whose hostname matches a known platform-infra subdomain
+ * (api, compliance, publisher, etc.). The mapping decides whether to use a
+ * service binding (zero public hop), a fetch-proxy to an explicit URL, or
+ * fail loudly because the subdomain is intentionally unmapped.
+ */
+async function dispatchPlatform(req: Request, env: Env, slug: string, host: string): Promise<Response> {
+  const mapping = PLATFORM_SUBDOMAINS[slug];
+  if (mapping.type === "service") {
+    const target = env[mapping.binding] as Fetcher | undefined;
+    if (!target) {
+      return new Response(`Reserved subdomain ${host} has no service binding configured.\n`, {
+        status: 502,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+    return await target.fetch(req);
+  }
+  if (mapping.type === "proxy") {
+    const url = new URL(req.url);
+    const headers = new Headers(req.headers);
+    headers.delete("host");
+    return await fetch(`${mapping.target}${url.pathname}${url.search}`, {
+      method: req.method,
+      headers,
+      body: req.body,
+    });
+  }
+  // type === "unmapped"
+  return new Response(
+    `Subdomain ${host} is reserved platform infrastructure with no dispatch target. ` +
+      `Add it to PLATFORM_SUBDOMAINS in fas/host/src/index.ts.\n`,
+    { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
+  );
+}
 
 /**
  * Proxy to `<cf-project>.pages.dev` for slugs that haven't been migrated to

@@ -1,6 +1,11 @@
 export interface Env {
   DB: D1Database;
   APPS: R2Bucket;
+  /** Service binding to the backend Worker (freeappstore-api), which serves
+   *  api.freeappstore.online. The wildcard route preempts that Worker's
+   *  custom_domain binding, so we dispatch reserved subdomains via this
+   *  binding rather than letting the request fall through. */
+  API?: Fetcher;
 }
 
 export interface Route {
