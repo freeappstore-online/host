@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentType, type Route, r2KeyFor, resolveRoute } from "../host";
+import { contentType, type Route, r2KeyFor, resolveRoute, securityHeaders } from "../host";
 
 // Minimal D1 stub — verifies the SQL shape and parameter binding without
 // spinning up a real D1. Real schema integration is exercised by the
@@ -107,6 +107,82 @@ describe("contentType", () => {
 // confirms the path works. If a regression breaks the fallback, those URLs
 // return the Worker's 404 instead — the user-visible symptom that flagged
 // the original bug.
+// ---- Security headers: defense-in-depth baseline applied to every app. ----
+// The analytics pipeline (loader, beacon, BYO tags) depends on these directives
+// being permissive enough to allow the platform origins. A future tightening
+// pass that drops the broad `https:` from script-src + connect-src must keep
+// the explicit api.freeappstore.online / cloudflareinsights / googletagmanager /
+// plausible.io origins or analytics breaks across every app.
+
+describe("securityHeaders", () => {
+  const html = securityHeaders({ htmlCache: true });
+  const asset = securityHeaders({ htmlCache: false });
+
+  it("HTML gets short cache, assets get immutable cache", () => {
+    expect(html.get("cache-control")).toContain("max-age=60");
+    expect(html.get("cache-control")).toContain("must-revalidate");
+    expect(asset.get("cache-control")).toContain("max-age=31536000");
+    expect(asset.get("cache-control")).toContain("immutable");
+  });
+
+  it("CSP allows the platform analytics loader endpoint", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toContain("https://api.freeappstore.online");
+    expect(csp).toMatch(/script-src[^;]*https:\/\/api\.freeappstore\.online/);
+    expect(csp).toMatch(/connect-src[^;]*https:\/\/api\.freeappstore\.online/);
+  });
+
+  it("CSP allows CF Web Analytics beacon (cookieless first-party)", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toContain("https://static.cloudflareinsights.com");
+    expect(csp).toContain("https://cloudflareinsights.com");
+  });
+
+  it("CSP allows BYO Google Analytics 4 tags", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toContain("https://www.googletagmanager.com");
+    expect(csp).toContain("https://www.google-analytics.com");
+  });
+
+  it("CSP allows BYO Plausible tags", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toContain("https://plausible.io");
+  });
+
+  it("CSP locks down object-src and base-uri (defense-in-depth)", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toMatch(/object-src 'none'/);
+    expect(csp).toMatch(/base-uri 'self'/);
+  });
+
+  it("frame-ancestors allows storefront preview iframes only", () => {
+    const csp = html.get("content-security-policy") ?? "";
+    expect(csp).toContain("frame-ancestors 'self' https://freeappstore.online");
+    expect(csp).toContain("https://freeappstore.pages.dev");
+    expect(csp).toContain("https://*.freeappstore.online");
+  });
+
+  it("upgrades insecure requests + sets HSTS", () => {
+    expect(html.get("content-security-policy")).toContain("upgrade-insecure-requests");
+    expect(html.get("strict-transport-security")).toMatch(/max-age=\d+/);
+    expect(html.get("strict-transport-security")).toContain("includeSubDomains");
+  });
+
+  it("disables powerful APIs by default (Permissions-Policy)", () => {
+    const pp = html.get("permissions-policy") ?? "";
+    expect(pp).toContain("geolocation=()");
+    expect(pp).toContain("camera=()");
+    expect(pp).toContain("microphone=()");
+    expect(pp).toContain("payment=()");
+    expect(pp).toContain("interest-cohort=()");
+  });
+
+  it("sets nosniff + strict referrer policy", () => {
+    expect(html.get("x-content-type-options")).toBe("nosniff");
+    expect(html.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+  });
+});
+
 describe("legacy fallback (integration shape only)", () => {
   it("documents the (slug, zone) → CF Pages project naming", () => {
     // Mirror of legacyProjectName in src/index.ts — keep in sync.

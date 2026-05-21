@@ -9,7 +9,7 @@
  * `_headers` file.
  */
 
-import { contentType, type Env, type Route, r2KeyFor, resolveRoute } from "./host";
+import { contentType, type Env, type Route, r2KeyFor, resolveRoute, securityHeaders } from "./host";
 
 /**
  * Platform-infra subdomains: NOT apps. The wildcard route catches them just
@@ -203,39 +203,12 @@ async function serve(bucket: R2Bucket, route: Route, url: URL, method: string, _
 }
 
 function respond(obj: R2ObjectBody, ct: string, method: string): Response {
-  const headers = new Headers();
+  // Headers are constructed in securityHeaders() so the policy lives in one
+  // testable place. We just layer content-type + etag on top.
+  const isHtml = ct.startsWith("text/html");
+  const headers = securityHeaders({ htmlCache: isHtml });
   headers.set("content-type", ct);
   headers.set("etag", obj.httpEtag);
-
-  // HTML is short-cached so a republish is visible within ~a minute; everything
-  // else is treated as content-addressed (build tools fingerprint asset paths)
-  // and cached aggressively. Apps that ship un-fingerprinted assets will see
-  // stale caches on republish — that's a build-tool fix, not a hosting bug.
-  if (ct.startsWith("text/html")) {
-    headers.set("cache-control", "public, max-age=60, must-revalidate");
-  } else {
-    headers.set("cache-control", "public, max-age=31536000, immutable");
-  }
-
-  // Security baseline. Apps inherit these unconditionally; per-app overrides
-  // are not supported in v1 by design (centralizing policy was a goal of the
-  // migration). If an app genuinely needs different CSP, that becomes a
-  // registry field later.
-  //
-  // No X-Frame-Options because the storefront iframes apps for preview
-  // (freeappstore.online/?app=<slug> and freeappstore.pages.dev/?app=<slug>).
-  // The CSP frame-ancestors directive below allows exactly those origins +
-  // same-origin, and blocks every other site from framing — same protection
-  // as `X-Frame-Options: DENY` minus the storefront. Modern browsers prefer
-  // frame-ancestors anyway; X-Frame-Options DENY can't list allowed origins.
-  headers.set(
-    "content-security-policy",
-    "frame-ancestors 'self' https://freeappstore.online https://freeappstore.pages.dev https://*.freeappstore.online",
-  );
-  headers.set("x-content-type-options", "nosniff");
-  headers.set("referrer-policy", "strict-origin-when-cross-origin");
-  headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
-
   // HEAD requests get headers only.
   return new Response(method === "HEAD" ? null : obj.body, { headers });
 }

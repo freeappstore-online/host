@@ -51,6 +51,49 @@ export function r2KeyFor(route: Route, pathname: string): string {
 }
 
 /**
+ * Build the security headers we attach to every R2-served response. Split
+ * out from the index.ts respond() helper so the policy is unit-testable
+ * without spinning up the full Worker, and so the next person to tighten
+ * CSP can edit one place. Pass-through args:
+ *   - htmlCache:  true for HTML (short-lived caching), false otherwise.
+ *
+ * Analytics origins are listed explicitly in script-src + connect-src so
+ * a future tightening (removing the broad `https:` and replacing with
+ * an allowlist) doesn't silently break the platform analytics loader,
+ * CF Web Analytics, or BYO GA4 / Plausible tags.
+ */
+export function securityHeaders(opts: { htmlCache: boolean }): Headers {
+  const headers = new Headers();
+  if (opts.htmlCache) {
+    headers.set("cache-control", "public, max-age=60, must-revalidate");
+  } else {
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+  }
+  const csp = [
+    "default-src 'self' https: data: blob:",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: https://api.freeappstore.online https://static.cloudflareinsights.com https://www.googletagmanager.com https://plausible.io",
+    "style-src 'self' 'unsafe-inline' https:",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data: https:",
+    "connect-src 'self' https: wss: https://api.freeappstore.online https://cloudflareinsights.com https://www.google-analytics.com https://plausible.io",
+    "frame-src 'self' https:",
+    "frame-ancestors 'self' https://freeappstore.online https://freeappstore.pages.dev https://*.freeappstore.online",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "upgrade-insecure-requests",
+  ].join("; ");
+  headers.set("content-security-policy", csp);
+  headers.set(
+    "permissions-policy",
+    "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), interest-cohort=()",
+  );
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  return headers;
+}
+
+/**
  * Best-effort MIME guess from file extension. Defaults to octet-stream so
  * the browser doesn't sniff and execute something it shouldn't (combined
  * with X-Content-Type-Options: nosniff downstream).
