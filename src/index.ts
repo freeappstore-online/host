@@ -221,7 +221,17 @@ function respond(obj: R2ObjectBody, ct: string, method: string): Response {
   // are not supported in v1 by design (centralizing policy was a goal of the
   // migration). If an app genuinely needs different CSP, that becomes a
   // registry field later.
-  headers.set("x-frame-options", "DENY");
+  //
+  // No X-Frame-Options because the storefront iframes apps for preview
+  // (freeappstore.online/?app=<slug> and freeappstore.pages.dev/?app=<slug>).
+  // The CSP frame-ancestors directive below allows exactly those origins +
+  // same-origin, and blocks every other site from framing — same protection
+  // as `X-Frame-Options: DENY` minus the storefront. Modern browsers prefer
+  // frame-ancestors anyway; X-Frame-Options DENY can't list allowed origins.
+  headers.set(
+    "content-security-policy",
+    "frame-ancestors 'self' https://freeappstore.online https://freeappstore.pages.dev https://*.freeappstore.online",
+  );
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
