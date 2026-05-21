@@ -33,6 +33,26 @@ CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and HSTS are
 emitted from this Worker. Apps no longer need their own `_headers` file —
 policy is centralized here. Cache: 60s for HTML, 1 year immutable for assets.
 
+## Secrets needed
+
+Two surfaces consume credentials related to Path B:
+
+| Where | Secrets | Notes |
+|---|---|---|
+| **This Worker** | None at runtime. The R2 + D1 bindings are declared in `wrangler.toml`; CF auto-injects them. | Nothing to rotate on the Worker itself. |
+| **App repos** (`.github/workflows/deploy.yml`) | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` set as **organization-level** secrets on `freeappstore-online` | One set, every repo inherits. See [workspace SECRETS.md](../../SECRETS.md) for the rotation procedure. |
+
+The R2 access key should be scoped to **Object Read & Write on `fas-apps`
+only** (least privilege — keeps the deploy creds away from `fas-backups`,
+`pas-storage`, `pws-media`).
+
+## When things go wrong
+
+- Worker itself failing → [RUNBOOKS/path-b-host-worker-down.md](../../RUNBOOKS/path-b-host-worker-down.md)
+- R2 bucket lost data → [RUNBOOKS/r2-bucket-recovery.md](../../RUNBOOKS/r2-bucket-recovery.md)
+- D1 `routes` table drift → [RUNBOOKS/d1-routes-corrupted.md](../../RUNBOOKS/d1-routes-corrupted.md)
+- Wildcard DNS broken → [RUNBOOKS/wildcard-dns-broken.md](../../RUNBOOKS/wildcard-dns-broken.md)
+
 ## Local dev
 
 ```bash
