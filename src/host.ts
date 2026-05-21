@@ -51,6 +51,22 @@ export function r2KeyFor(route: Route, pathname: string): string {
 }
 
 /**
+ * Compare a client's `If-None-Match` request header against an R2 object's
+ * httpEtag. Returns true iff the browser already has a fresh copy and we
+ * should respond 304 Not Modified.
+ *
+ * `If-None-Match: *` matches any existing resource. Otherwise the header
+ * is a comma-separated list of etags (each quoted); we match by exact
+ * string. R2 only emits strong etags, so we don't need W/ prefix handling.
+ */
+export function etagsMatch(headerValue: string | null, objectEtag: string): boolean {
+  if (!headerValue) return false;
+  const trimmed = headerValue.trim();
+  if (trimmed === "*") return true;
+  return trimmed.split(",").some((t) => t.trim() === objectEtag);
+}
+
+/**
  * Build the security headers we attach to every R2-served response. Split
  * out from the index.ts respond() helper so the policy is unit-testable
  * without spinning up the full Worker, and so the next person to tighten

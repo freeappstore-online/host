@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentType, type Route, r2KeyFor, resolveRoute, securityHeaders } from "../host";
+import { contentType, etagsMatch, type Route, r2KeyFor, resolveRoute, securityHeaders } from "../host";
 
 // Minimal D1 stub — verifies the SQL shape and parameter binding without
 // spinning up a real D1. Real schema integration is exercised by the
@@ -180,6 +180,35 @@ describe("securityHeaders", () => {
   it("sets nosniff + strict referrer policy", () => {
     expect(html.get("x-content-type-options")).toBe("nosniff");
     expect(html.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+  });
+});
+
+describe("etagsMatch (304 Not Modified)", () => {
+  it("returns false when no If-None-Match header is sent", () => {
+    expect(etagsMatch(null, '"abc"')).toBe(false);
+  });
+
+  it("matches a single quoted etag exactly", () => {
+    expect(etagsMatch('"abc"', '"abc"')).toBe(true);
+    expect(etagsMatch('"abc"', '"def"')).toBe(false);
+  });
+
+  it("matches against a comma-separated list", () => {
+    expect(etagsMatch('"abc", "def", "ghi"', '"def"')).toBe(true);
+    expect(etagsMatch('"abc", "def"', '"xyz"')).toBe(false);
+  });
+
+  it("wildcard * matches any etag", () => {
+    expect(etagsMatch("*", '"anything"')).toBe(true);
+  });
+
+  it("trims whitespace around list entries", () => {
+    expect(etagsMatch('  "abc"  ,  "def"  ', '"def"')).toBe(true);
+  });
+
+  it("treats empty header as no-match", () => {
+    expect(etagsMatch("", '"abc"')).toBe(false);
+    expect(etagsMatch("   ", '"abc"')).toBe(false);
   });
 });
 

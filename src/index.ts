@@ -9,7 +9,7 @@
  * `_headers` file.
  */
 
-import { contentType, type Env, type Route, r2KeyFor, resolveRoute, securityHeaders } from "./host";
+import { contentType, type Env, etagsMatch, type Route, r2KeyFor, resolveRoute, securityHeaders } from "./host";
 
 /**
  * Platform-infra subdomains: NOT apps. The wildcard route catches them just
@@ -84,7 +84,7 @@ export default {
 
     // Path B route — if the slug is registered in D1, serve from R2.
     const route = await resolveRoute(env.DB, host);
-    if (route) return await serve(env.APPS, route, url, req.method, ctx);
+    if (route) return await serve(env.APPS, route, url, req.method, req.headers.get("if-none-match"), ctx);
 
     // Otherwise fall back to the legacy CF Pages project for this slug. This
     // is how the migration stays non-breaking: an app stays on CF Pages
@@ -175,21 +175,30 @@ function legacyProjectName(slug: string, zone: string): string | null {
   return null;
 }
 
-async function serve(bucket: R2Bucket, route: Route, url: URL, method: string, _ctx: ExecutionContext): Promise<Response> {
+async function serve(
+  bucket: R2Bucket,
+  route: Route,
+  url: URL,
+  method: string,
+  ifNoneMatch: string | null,
+  _ctx: ExecutionContext,
+): Promise<Response> {
   if (method !== "GET" && method !== "HEAD") {
     return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
   }
 
   const key = r2KeyFor(route, url.pathname);
   let obj = await bucket.get(key);
+  let servedKey = key;
 
   // SPA fallback: if the requested path has no file extension and missed,
   // serve the app's index.html so client-side routers can take over. Static
   // assets (with extensions) still 404 — we don't want to mask missing JS
   // bundles or images.
   if (!obj && !/\.[a-z0-9]+$/i.test(url.pathname)) {
-    obj = await bucket.get(`${route.r2_prefix}/index.html`);
-    if (obj) return respond(obj, "text/html; charset=utf-8", method);
+    const fallbackKey = `${route.r2_prefix}/index.html`;
+    obj = await bucket.get(fallbackKey);
+    if (obj) servedKey = fallbackKey;
   }
 
   if (!obj) return notFound(url.pathname, route.slug);
@@ -199,7 +208,18 @@ async function serve(bucket: R2Bucket, route: Route, url: URL, method: string, _
   // defaults to `index.html`, but `url.pathname` is still `/`, which has
   // no extension and would resolve to `application/octet-stream`. With
   // X-Content-Type-Options: nosniff that downloads instead of rendering.
-  return respond(obj, contentType(key), method);
+  const ct = servedKey === key ? contentType(key) : "text/html; charset=utf-8";
+
+  // 304 Not Modified: skip the body transfer when the browser already has
+  // a fresh copy. Saves bandwidth on every refresh of every asset. The
+  // R2 object metadata fetch still happens, but the body stream isn't read.
+  if (etagsMatch(ifNoneMatch, obj.httpEtag)) {
+    const headers = securityHeaders({ htmlCache: ct.startsWith("text/html") });
+    headers.set("etag", obj.httpEtag);
+    return new Response(null, { status: 304, headers });
+  }
+
+  return respond(obj, ct, method);
 }
 
 function respond(obj: R2ObjectBody, ct: string, method: string): Response {
