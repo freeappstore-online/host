@@ -1,0 +1,27 @@
+name = "freeappstore-host"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+workers_dev = false
+
+# Catches every subdomain under freeappstore.online. The wildcard DNS record
+# + wildcard SSL cert on the zone is what makes this scale to thousands of
+# apps without provisioning per-app DNS or domain bindings.
+[[routes]]
+pattern = "*.freeappstore.online/*"
+zone_name = "freeappstore.online"
+
+# Apex stays on the storefront's CF Pages project — this worker only handles
+# subdomains. (No route for "freeappstore.online/*".)
+
+[[r2_buckets]]
+binding = "APPS"
+bucket_name = "fas-apps"
+
+# Reuses the existing fas D1 database (same one admin uses). The new `routes`
+# table lives alongside whatever else is in there; the schema is in
+# migrations/0001_create_routes.sql.
+[[d1_databases]]
+binding = "DB"
+database_name = "fas"
+database_id = "a32701c0-5a56-4a12-810d-485166202e39"
+migrations_dir = "migrations"
