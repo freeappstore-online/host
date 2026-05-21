@@ -16,13 +16,56 @@ export default {
     const url = new URL(req.url);
     const host = req.headers.get("host") ?? url.host;
 
-    // Subdomain lookup first — cheapest gate. Unknown host → 404, no R2 hit.
+    // Path B route first — if the slug is registered in D1, serve from R2.
     const route = await resolveRoute(env.DB, host);
-    if (!route) return notFound(host);
+    if (route) return await serve(env.APPS, route, url, req.method, ctx);
 
-    return await serve(env.APPS, route, url, req.method, ctx);
+    // Otherwise fall back to the legacy CF Pages project for this slug. This
+    // is how the migration stays non-breaking: an app stays on CF Pages
+    // until it's been built, uploaded to R2, and given a D1 row. The user-
+    // facing URL never changes — just the backend behind it.
+    return await legacyFallback(req, host);
   },
 };
+
+/**
+ * Proxy to `<cf-project>.pages.dev` for slugs that haven't been migrated to
+ * Path B yet. Mirrors the legacy STORE_CONFIG.cfProjectName naming so the
+ * right project is hit per zone. Returns 404 if the host doesn't look like
+ * a valid `<slug>.<zone>` pair we know how to route.
+ */
+async function legacyFallback(req: Request, host: string): Promise<Response> {
+  const cleaned = host.toLowerCase().split(":")[0];
+  const dot = cleaned.indexOf(".");
+  if (dot < 1) return notFound(host);
+
+  const slug = cleaned.slice(0, dot);
+  const zone = cleaned.slice(dot + 1);
+  const cfProject = legacyProjectName(slug, zone);
+  if (!cfProject) return notFound(host);
+
+  const url = new URL(req.url);
+  const target = `https://${cfProject}.pages.dev${url.pathname}${url.search}`;
+  // Drop the inbound Host header so the proxied fetch uses the target's
+  // host (CF Pages routes on its own *.pages.dev hostname). Keep everything
+  // else so request semantics are preserved.
+  const headers = new Headers(req.headers);
+  headers.delete("host");
+  return await fetch(target, { method: req.method, headers, body: req.body });
+}
+
+/**
+ * Maps (slug, zone) to the legacy CF Pages project name. Mirrors
+ * STORE_CONFIG.cfProjectName from fas/admin/src/publish.ts — keep in sync
+ * if naming there changes. Returns null for zones we don't host (so we
+ * don't accidentally proxy arbitrary subdomains).
+ */
+function legacyProjectName(slug: string, zone: string): string | null {
+  if (zone === "freeappstore.online") return `free${slug}app`;
+  if (zone === "freegamestore.online") return slug;
+  if (zone === "proappstore.online") return `proappstore-${slug}`;
+  return null;
+}
 
 async function serve(bucket: R2Bucket, route: Route, url: URL, method: string, _ctx: ExecutionContext): Promise<Response> {
   if (method !== "GET" && method !== "HEAD") {
@@ -43,7 +86,12 @@ async function serve(bucket: R2Bucket, route: Route, url: URL, method: string, _
 
   if (!obj) return notFound(url.pathname, route.slug);
 
-  return respond(obj, contentType(url.pathname), method);
+  // Resolve MIME from the KEY (the file we actually served), not the URL
+  // pathname. They differ when the URL is `/` or ends with `/` — r2KeyFor
+  // defaults to `index.html`, but `url.pathname` is still `/`, which has
+  // no extension and would resolve to `application/octet-stream`. With
+  // X-Content-Type-Options: nosniff that downloads instead of rendering.
+  return respond(obj, contentType(key), method);
 }
 
 function respond(obj: R2ObjectBody, ct: string, method: string): Response {

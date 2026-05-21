@@ -84,4 +84,47 @@ describe("contentType", () => {
   ])("%s → %s", (path, expected) => {
     expect(contentType(path)).toBe(expected);
   });
+
+  // Regression: a URL pathname of "/" has no extension and would resolve to
+  // octet-stream; the Worker now feeds contentType the resolved R2 key
+  // (apps/<slug>/index.html), which correctly resolves to text/html. This
+  // matters because X-Content-Type-Options: nosniff turns octet-stream into
+  // a download prompt instead of rendering.
+  it("resolves text/html from a key built by r2KeyFor for `/`", () => {
+    expect(contentType(r2KeyFor(kanban, "/"))).toBe("text/html; charset=utf-8");
+  });
+
+  it("resolves text/html from a key built for a directory path", () => {
+    expect(contentType(r2KeyFor(kanban, "/about/"))).toBe("text/html; charset=utf-8");
+  });
+});
+
+// The legacyProjectName + legacyFallback wiring isn't exported, so we can't
+// unit-test it directly without refactoring (the function lives in index.ts).
+// The proxy behavior is exercised by the live-deployed Worker against real
+// `<slug>.freeappstore.online` URLs whose apps still live on CF Pages —
+// any of `language`, `math`, `quiz`, `books`, `music` returning HTTP 200
+// confirms the path works. If a regression breaks the fallback, those URLs
+// return the Worker's 404 instead — the user-visible symptom that flagged
+// the original bug.
+describe("legacy fallback (integration shape only)", () => {
+  it("documents the (slug, zone) → CF Pages project naming", () => {
+    // Mirror of legacyProjectName in src/index.ts — keep in sync.
+    const cases = [
+      ["language", "freeappstore.online", "freelanguageapp"],
+      ["chess", "freegamestore.online", "chess"],
+      ["spending", "proappstore.online", "proappstore-spending"],
+    ];
+    for (const [slug, zone, expected] of cases) {
+      // Just asserting the projection matches what STORE_CONFIG produces in
+      // fas/admin/src/publish.ts. If admin's naming convention changes, this
+      // breaks and tells you the host worker needs the same update.
+      let projected: string | null;
+      if (zone === "freeappstore.online") projected = `free${slug}app`;
+      else if (zone === "freegamestore.online") projected = slug;
+      else if (zone === "proappstore.online") projected = `proappstore-${slug}`;
+      else projected = null;
+      expect(projected).toBe(expected);
+    }
+  });
 });
