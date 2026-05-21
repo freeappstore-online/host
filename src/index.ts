@@ -31,7 +31,8 @@ import { contentType, type Env, type Route, r2KeyFor, resolveRoute } from "./hos
 type PlatformDispatch =
   | { type: "service"; binding: keyof Env }
   | { type: "proxy"; target: string }
-  | { type: "unmapped" };
+  | { type: "redirect"; to: string; status?: 301 | 302 }
+  | { type: "gone"; message: string };
 
 const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   api: { type: "service", binding: "API" },
@@ -40,8 +41,28 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   submissions: { type: "proxy", target: "https://submissions.pages.dev" },
   agent: { type: "proxy", target: "https://agent.pages.dev" },
   create: { type: "proxy", target: "https://freeappstore-create.pages.dev" },
-  www: { type: "unmapped" },
-  auth: { type: "unmapped" },
+  // www → 301 to the apex. Standard convention; matches what the host repo
+  // would do via a redirect rule if CF Pages owned the apex still.
+  www: { type: "redirect", to: "https://freeappstore.online", status: 301 },
+  // `auth.freeappstore.online` is NOT a real web subdomain — the OAuth
+  // callback lives at api.freeappstore.online/v1/auth/*, and `auth@...` is
+  // only used as an email FROM address (RESEND_API_KEY, see
+  // platform/packages/backend/src/lib/email.ts). Returning 404 (not 502)
+  // because nothing is misconfigured — there is just no web target.
+  auth: { type: "gone", message: "auth.freeappstore.online is not a web service. Auth flows live at api.freeappstore.online/v1/auth/*; the `auth@` mailbox is for email only." },
+};
+
+/**
+ * Apps whose CF Pages project name doesn't follow the `free<slug>app`
+ * convention. Audit of `wrangler pages project list` on 2026-05-21 turned
+ * up just one: `chessclock` is hosted at `freechessclock.pages.dev` (no
+ * `app` suffix). Add here if you spot more during the batch migration.
+ *
+ * Long-term: once every app has a D1 routes row with a `cf_project` field,
+ * this table goes away.
+ */
+const APP_PROJECT_OVERRIDES: Record<string, string> = {
+  chessclock: "freechessclock",
 };
 
 export default {
@@ -81,6 +102,8 @@ export default {
  */
 async function dispatchPlatform(req: Request, env: Env, slug: string, host: string): Promise<Response> {
   const mapping = PLATFORM_SUBDOMAINS[slug];
+  const url = new URL(req.url);
+
   if (mapping.type === "service") {
     const target = env[mapping.binding] as Fetcher | undefined;
     if (!target) {
@@ -92,7 +115,6 @@ async function dispatchPlatform(req: Request, env: Env, slug: string, host: stri
     return await target.fetch(req);
   }
   if (mapping.type === "proxy") {
-    const url = new URL(req.url);
     const headers = new Headers(req.headers);
     headers.delete("host");
     return await fetch(`${mapping.target}${url.pathname}${url.search}`, {
@@ -101,12 +123,15 @@ async function dispatchPlatform(req: Request, env: Env, slug: string, host: stri
       body: req.body,
     });
   }
-  // type === "unmapped"
-  return new Response(
-    `Subdomain ${host} is reserved platform infrastructure with no dispatch target. ` +
-      `Add it to PLATFORM_SUBDOMAINS in fas/host/src/index.ts.\n`,
-    { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
-  );
+  if (mapping.type === "redirect") {
+    return Response.redirect(`${mapping.to}${url.pathname}${url.search}`, mapping.status ?? 301);
+  }
+  // type === "gone" — there's intentionally no web target. Clean 404 with
+  // explanation, not a 502 (nothing is misconfigured).
+  return new Response(`${mapping.message}\n`, {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
 }
 
 /**
@@ -142,7 +167,9 @@ async function legacyFallback(req: Request, host: string): Promise<Response> {
  * don't accidentally proxy arbitrary subdomains).
  */
 function legacyProjectName(slug: string, zone: string): string | null {
-  if (zone === "freeappstore.online") return `free${slug}app`;
+  if (zone === "freeappstore.online") {
+    return APP_PROJECT_OVERRIDES[slug] ?? `free${slug}app`;
+  }
   if (zone === "freegamestore.online") return slug;
   if (zone === "proappstore.online") return `proappstore-${slug}`;
   return null;
