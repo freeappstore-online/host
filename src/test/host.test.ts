@@ -168,10 +168,10 @@ describe("securityHeaders", () => {
     expect(html.get("strict-transport-security")).toContain("includeSubDomains");
   });
 
-  it("disables powerful APIs by default (Permissions-Policy)", () => {
+  it("scopes powerful APIs via Permissions-Policy", () => {
     const pp = html.get("permissions-policy") ?? "";
-    expect(pp).toContain("geolocation=()");
-    expect(pp).toContain("camera=()");
+    expect(pp).toContain("geolocation=(self)");
+    expect(pp).toContain("camera=(self)");
     expect(pp).toContain("microphone=()");
     expect(pp).toContain("payment=()");
     expect(pp).toContain("interest-cohort=()");

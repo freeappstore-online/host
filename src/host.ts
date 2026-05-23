@@ -101,7 +101,7 @@ export function securityHeaders(opts: { htmlCache: boolean }): Headers {
   headers.set("content-security-policy", csp);
   headers.set(
     "permissions-policy",
-    "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), interest-cohort=()",
+    "geolocation=(self), microphone=(), camera=(self), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), midi=(), interest-cohort=()",
   );
   headers.set("x-content-type-options", "nosniff");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
