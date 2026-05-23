@@ -10,6 +10,10 @@ workers_dev = false
 pattern = "*.freeappstore.online/*"
 zone_name = "freeappstore.online"
 
+[[routes]]
+pattern = "*.progamestore.online/*"
+zone_name = "progamestore.online"
+
 # Apex stays on the storefront's CF Pages project — this worker only handles
 # subdomains. (No route for "freeappstore.online/*".)
 
