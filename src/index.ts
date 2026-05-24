@@ -37,10 +37,11 @@ type PlatformDispatch =
 const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   api: { type: "service", binding: "API" },
   compliance: { type: "proxy", target: "https://compliance.pages.dev" },
-  publisher: { type: "proxy", target: "https://publisher.pages.dev" },
+  publisher: { type: "redirect", to: "https://console.freeappstore.online", status: 301 },
   submissions: { type: "proxy", target: "https://submissions.pages.dev" },
   agent: { type: "proxy", target: "https://agent.pages.dev" },
-  create: { type: "proxy", target: "https://freeappstore-create.pages.dev" },
+  // console and create serve from R2 via D1 routes (same as apps).
+  // They are NOT in PLATFORM_SUBDOMAINS — they fall through to resolveRoute().
   // www → 301 to the apex. Standard convention; matches what the host repo
   // would do via a redirect rule if CF Pages owned the apex still.
   www: { type: "redirect", to: "https://freeappstore.online", status: 301 },
