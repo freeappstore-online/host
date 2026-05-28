@@ -46,8 +46,16 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   // `publisher` — the former was a typo that meant the entry never fired).
   submissions: { type: "proxy", target: "https://submissions.pages.dev" },
   agent: { type: "proxy", target: "https://agent.pages.dev" },
-  // console and create serve from R2 via D1 routes (same as apps).
-  // They are NOT in PLATFORM_SUBDOMAINS — they fall through to resolveRoute().
+  // console serves from R2 via a D1 routes row (`apps/console`). Not in
+  // PLATFORM_SUBDOMAINS — falls through to resolveRoute().
+  //
+  // `create` has been half-migrated since 2026-05-24: it was removed from
+  // PLATFORM_SUBDOMAINS but no D1 row was added and R2 prefix is empty.
+  // The actual CF Pages project is named `freeappstore-create` (not the
+  // formula-default `freecreateapp`), so the legacyFallback path 530s.
+  // Override map keeps `create.freeappstore.online` live until either the
+  // R2 prefix gets populated or a D1 row is inserted (see
+  // APP_PROJECT_OVERRIDES below).
   // www → 301 to the apex. Standard convention; matches what the host repo
   // would do via a redirect rule if CF Pages owned the apex still.
   www: { type: "redirect", to: "https://freeappstore.online", status: 301 },
@@ -70,6 +78,11 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
  */
 const APP_PROJECT_OVERRIDES: Record<string, string> = {
   chessclock: "freechessclock",
+  // `create.freeappstore.online`'s actual CF Pages project is
+  // `freeappstore-create`, not the formula-default `freecreateapp`.
+  // Half-migrated to Path B but D1 row + R2 prefix are missing —
+  // keep this override until the migration finishes.
+  create: "freeappstore-create",
 };
 
 export default {
