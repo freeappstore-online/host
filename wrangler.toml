@@ -10,9 +10,14 @@ workers_dev = false
 pattern = "*.freeappstore.online/*"
 zone_name = "freeappstore.online"
 
-[[routes]]
-pattern = "*.progamestore.online/*"
-zone_name = "progamestore.online"
+# `*.progamestore.online/*` was removed 2026-05-28 (PLAN-ARCH-CLEANUP follow-up).
+# The FAS host worker has no code paths for the PGS zone — legacyProjectName()
+# returns null for it. The wildcard was returning misleading "no app registered
+# at <pgs subdomain>" 404s for unbound PGS hostnames. Published PGS games have
+# their own per-game Worker routes or CF Pages custom-domain bindings.
+# Unbound subdomains now correctly return CF's standard 5xx instead.
+# If PGS adopts Path B, build a dedicated pgs/host/ Worker — do not re-add this
+# cross-store route.
 
 # Apex stays on the storefront's CF Pages project — this worker only handles
 # subdomains. (No route for "freeappstore.online/*".)
