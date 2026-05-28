@@ -37,7 +37,13 @@ type PlatformDispatch =
 const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   api: { type: "service", binding: "API" },
   compliance: { type: "proxy", target: "https://compliance.pages.dev" },
-  publisher: { type: "redirect", to: "https://console.freeappstore.online", status: 301 },
+  // `publish.freeappstore.online/*` is served by freeappstore-publisher
+  // (more-specific Worker Route — beats the wildcard that lands here).
+  // It exposes /api/me, /api/create, /api/publish-existing called by
+  // create.freeappstore.online/publish. If publisher is ever decommissioned,
+  // those endpoints need to land on FAS platform backend first, and only
+  // then can a redirect entry be added here (keyed `publish`, not
+  // `publisher` — the former was a typo that meant the entry never fired).
   submissions: { type: "proxy", target: "https://submissions.pages.dev" },
   agent: { type: "proxy", target: "https://agent.pages.dev" },
   // console and create serve from R2 via D1 routes (same as apps).
