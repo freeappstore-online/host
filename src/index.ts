@@ -67,24 +67,10 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   auth: { type: "gone", message: "auth.freeappstore.online is not a web service. Auth flows live at api.freeappstore.online/v1/auth/*; the `auth@` mailbox is for email only." },
 };
 
-/**
- * Authoritative list of FAS slugs that still serve from CF Pages (legacy).
- * Anything not in this map AND not in the D1 `routes` table returns a
- * clean 404 — the previous `free<slug>app` formula default was producing
- * misleading 530s for every typo subdomain by proxying to nonexistent
- * `.pages.dev` URLs.
- *
- * Verified live 2026-05-28 via `wrangler pages project list`. To add a
- * straggler back, include the actual CF Pages project name as the value.
- */
-const APP_PROJECT_OVERRIDES: Record<string, string> = {
-  chessclock: "freechessclock",
-  // `create` + `spending` migrated to Path B 2026-05-28 (D1 routes row +
-  // R2 upload). Overrides removed; resolveRoute() handles them like any
-  // other app. Only chessclock remains on legacy CF Pages — its actual
-  // project name (freechessclock, no `app` suffix) doesn't match the
-  // formula and migration hasn't been done yet.
-};
+// APP_PROJECT_OVERRIDES removed 2026-05-28: every FAS app on the storefront
+// is on Path B (D1 routes → R2). No slug still legitimately uses a legacy
+// CF Pages project. legacyFallback() and legacyProjectName() are gone too —
+// see the simplified fetch handler below.
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -107,11 +93,11 @@ export default {
     const route = await resolveRoute(env.DB, host);
     if (route) return await serve(env.APPS, route, url, req.method, req.headers.get("if-none-match"), ctx);
 
-    // Otherwise fall back to the legacy CF Pages project for this slug. This
-    // is how the migration stays non-breaking: an app stays on CF Pages
-    // until it's been built, uploaded to R2, and given a D1 row. The user-
-    // facing URL never changes — just the backend behind it.
-    return await legacyFallback(req, host);
+    // No legacy fallback — every registered FAS app is on Path B as of
+    // 2026-05-28. Unknown slugs get a clean 404; the previous CF Pages
+    // proxy created confusing 530s for every typo (and the 100/account
+    // CF Pages cap was a scaling dead-end for the free side anyway).
+    return notFound(host);
   },
 };
 
@@ -153,45 +139,6 @@ async function dispatchPlatform(req: Request, env: Env, slug: string, host: stri
     status: 404,
     headers: { "content-type": "text/plain; charset=utf-8" },
   });
-}
-
-/**
- * Proxy to `<cf-project>.pages.dev` for slugs that haven't been migrated to
- * Path B yet. Mirrors the legacy STORE_CONFIG.cfProjectName naming so the
- * right project is hit per zone. Returns 404 if the host doesn't look like
- * a valid `<slug>.<zone>` pair we know how to route.
- */
-async function legacyFallback(req: Request, host: string): Promise<Response> {
-  const cleaned = host.toLowerCase().split(":")[0];
-  const dot = cleaned.indexOf(".");
-  if (dot < 1) return notFound(host);
-
-  const slug = cleaned.slice(0, dot);
-  const zone = cleaned.slice(dot + 1);
-  const cfProject = legacyProjectName(slug, zone);
-  if (!cfProject) return notFound(host);
-
-  const url = new URL(req.url);
-  const target = `https://${cfProject}.pages.dev${url.pathname}${url.search}`;
-  // Drop the inbound Host header so the proxied fetch uses the target's
-  // host (CF Pages routes on its own *.pages.dev hostname). Keep everything
-  // else so request semantics are preserved.
-  const headers = new Headers(req.headers);
-  headers.delete("host");
-  return await fetch(target, { method: req.method, headers, body: req.body });
-}
-
-/**
- * Maps (slug, zone) to a legacy CF Pages project name we KNOW exists.
- * Returns null otherwise → caller serves clean 404 instead of proxying
- * to a phantom `.pages.dev` URL. This worker only routes the FAS zone
- * (`*.freeappstore.online/*` — see wrangler.toml); cross-zone branches
- * were removed 2026-05-28 because they were dead code that proxied to
- * nonexistent projects and produced 530s for any typo.
- */
-function legacyProjectName(slug: string, zone: string): string | null {
-  if (zone !== "freeappstore.online") return null;
-  return APP_PROJECT_OVERRIDES[slug] ?? null;
 }
 
 async function serve(
