@@ -68,16 +68,18 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
 };
 
 /**
- * Apps whose CF Pages project name doesn't follow the `free<slug>app`
- * convention. Audit of `wrangler pages project list` on 2026-05-21 turned
- * up just one: `chessclock` is hosted at `freechessclock.pages.dev` (no
- * `app` suffix). Add here if you spot more during the batch migration.
+ * Authoritative list of FAS slugs that still serve from CF Pages (legacy).
+ * Anything not in this map AND not in the D1 `routes` table returns a
+ * clean 404 — the previous `free<slug>app` formula default was producing
+ * misleading 530s for every typo subdomain by proxying to nonexistent
+ * `.pages.dev` URLs.
  *
- * Long-term: once every app has a D1 routes row with a `cf_project` field,
- * this table goes away.
+ * Verified live 2026-05-28 via `wrangler pages project list`. To add a
+ * straggler back, include the actual CF Pages project name as the value.
  */
 const APP_PROJECT_OVERRIDES: Record<string, string> = {
   chessclock: "freechessclock",
+  spending: "freespendingapp",
   // `create.freeappstore.online`'s actual CF Pages project is
   // `freeappstore-create`, not the formula-default `freecreateapp`.
   // Half-migrated to Path B but D1 row + R2 prefix are missing —
@@ -181,18 +183,16 @@ async function legacyFallback(req: Request, host: string): Promise<Response> {
 }
 
 /**
- * Maps (slug, zone) to the legacy CF Pages project name. Mirrors
- * STORE_CONFIG.cfProjectName from fas/admin/src/publish.ts — keep in sync
- * if naming there changes. Returns null for zones we don't host (so we
- * don't accidentally proxy arbitrary subdomains).
+ * Maps (slug, zone) to a legacy CF Pages project name we KNOW exists.
+ * Returns null otherwise → caller serves clean 404 instead of proxying
+ * to a phantom `.pages.dev` URL. This worker only routes the FAS zone
+ * (`*.freeappstore.online/*` — see wrangler.toml); cross-zone branches
+ * were removed 2026-05-28 because they were dead code that proxied to
+ * nonexistent projects and produced 530s for any typo.
  */
 function legacyProjectName(slug: string, zone: string): string | null {
-  if (zone === "freeappstore.online") {
-    return APP_PROJECT_OVERRIDES[slug] ?? `free${slug}app`;
-  }
-  if (zone === "freegamestore.online") return slug;
-  if (zone === "proappstore.online") return `proappstore-${slug}`;
-  return null;
+  if (zone !== "freeappstore.online") return null;
+  return APP_PROJECT_OVERRIDES[slug] ?? null;
 }
 
 async function serve(
