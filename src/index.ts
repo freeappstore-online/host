@@ -80,11 +80,8 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
 const APP_PROJECT_OVERRIDES: Record<string, string> = {
   chessclock: "freechessclock",
   spending: "freespendingapp",
-  // `create.freeappstore.online`'s actual CF Pages project is
-  // `freeappstore-create`, not the formula-default `freecreateapp`.
-  // Half-migrated to Path B but D1 row + R2 prefix are missing —
-  // keep this override until the migration finishes.
-  create: "freeappstore-create",
+  // `create` migrated to Path B 2026-05-28 (D1 routes row + R2 upload).
+  // Override removed; resolveRoute() handles it like any other app.
 };
 
 export default {
