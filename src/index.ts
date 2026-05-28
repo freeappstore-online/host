@@ -79,9 +79,11 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
  */
 const APP_PROJECT_OVERRIDES: Record<string, string> = {
   chessclock: "freechessclock",
-  spending: "freespendingapp",
-  // `create` migrated to Path B 2026-05-28 (D1 routes row + R2 upload).
-  // Override removed; resolveRoute() handles it like any other app.
+  // `create` + `spending` migrated to Path B 2026-05-28 (D1 routes row +
+  // R2 upload). Overrides removed; resolveRoute() handles them like any
+  // other app. Only chessclock remains on legacy CF Pages — its actual
+  // project name (freechessclock, no `app` suffix) doesn't match the
+  // formula and migration hasn't been done yet.
 };
 
 export default {
