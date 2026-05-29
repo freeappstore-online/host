@@ -33,7 +33,7 @@ export async function resolveRoute(db: D1Database, host: string): Promise<Route 
   if (!slug || !zone) return null;
 
   const row = await db
-    .prepare("SELECT slug, zone, r2_prefix, store FROM routes WHERE slug = ?1 AND zone = ?2 AND hosted_on = 'r2'")
+    .prepare("SELECT slug, zone, r2_prefix, store FROM routes WHERE slug = ?1 AND zone = ?2")
     .bind(slug, zone)
     .first<Route>();
   return row ?? null;
