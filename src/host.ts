@@ -93,7 +93,7 @@ export function securityHeaders(opts: { htmlCache: boolean }): Headers {
     "font-src 'self' data: https:",
     "connect-src 'self' https: wss: https://api.freeappstore.online https://cloudflareinsights.com https://www.google-analytics.com https://plausible.io",
     "frame-src 'self' https:",
-    "frame-ancestors 'self' https://freeappstore.online https://freeappstore.pages.dev https://*.freeappstore.online",
+    "frame-ancestors 'self' https://freeappstore.online https://*.freeappstore.online",
     "base-uri 'self'",
     "object-src 'none'",
     "upgrade-insecure-requests",

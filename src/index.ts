@@ -1,8 +1,6 @@
 /**
  * freeappstore-host — serves every published app from R2.
  *
- * One Worker on *.freeappstore.online replaces the per-app CF Pages
- * project model that capped the marketplace at 100 apps per CF account.
  * Subdomain → slug → R2 prefix lookup happens in D1; assets stream from
  * the fas-apps bucket. Security headers are emitted from this Worker
  * (single source of truth), so individual apps don't need their own
@@ -13,13 +11,12 @@ import { contentType, type Env, etagsMatch, type Route, r2KeyFor, resolveRoute, 
 
 /**
  * Platform-infra subdomains: NOT apps. The wildcard route catches them just
- * like apps, but their fallback targets don't follow the `free<slug>app`
- * naming convention. Each one is dispatched explicitly:
+ * like apps, but they're dispatched explicitly:
  *
  *  - `service` → Worker-to-Worker via service binding (zero public hop)
- *  - `proxy`   → fetch() to a specific *.pages.dev URL (for CF Pages-hosted infra)
- *  - `unmapped`→ return a clean 502 with "this needs ops attention" instead of
- *                a misleading DNS error for guessed-wrong project names
+ *  - `proxy`   → fetch() to a specific URL (for separately-hosted infra)
+ *  - `redirect`→ 301/302 to a different URL
+ *  - `gone`    → clean 404 for subdomains with no web target
  *
  * If you add a new platform subdomain, add a row here AND add the matching
  * [[services]] entry in wrangler.toml when type=service.
@@ -39,25 +36,16 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   compliance: { type: "proxy", target: "https://compliance.pages.dev" },
   // `publish.freeappstore.online/*` is served by freeappstore-publisher
   // (more-specific Worker Route — beats the wildcard that lands here).
-  // It exposes /api/me, /api/create, /api/publish-existing called by
+  // It exposes /api/me, /api/create called by
   // create.freeappstore.online/publish. If publisher is ever decommissioned,
   // those endpoints need to land on FAS platform backend first, and only
   // then can a redirect entry be added here (keyed `publish`, not
   // `publisher` — the former was a typo that meant the entry never fired).
   submissions: { type: "proxy", target: "https://submissions.pages.dev" },
   agent: { type: "proxy", target: "https://agent.pages.dev" },
-  // console serves from R2 via a D1 routes row (`apps/console`). Not in
-  // PLATFORM_SUBDOMAINS — falls through to resolveRoute().
-  //
-  // `create` has been half-migrated since 2026-05-24: it was removed from
-  // PLATFORM_SUBDOMAINS but no D1 row was added and R2 prefix is empty.
-  // The actual CF Pages project is named `freeappstore-create` (not the
-  // formula-default `freecreateapp`), so the legacyFallback path 530s.
-  // Override map keeps `create.freeappstore.online` live until either the
-  // R2 prefix gets populated or a D1 row is inserted (see
-  // APP_PROJECT_OVERRIDES below).
-  // www → 301 to the apex. Standard convention; matches what the host repo
-  // would do via a redirect rule if CF Pages owned the apex still.
+  // console and create serve from R2 via D1 routes rows.
+  // They are NOT in PLATFORM_SUBDOMAINS — they fall through to resolveRoute().
+  // www → 301 to the apex.
   www: { type: "redirect", to: "https://freeappstore.online", status: 301 },
   // `auth.freeappstore.online` is NOT a real web subdomain — the OAuth
   // callback lives at api.freeappstore.online/v1/auth/*, and `auth@...` is
@@ -66,11 +54,6 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   // because nothing is misconfigured — there is just no web target.
   auth: { type: "gone", message: "auth.freeappstore.online is not a web service. Auth flows live at api.freeappstore.online/v1/auth/*; the `auth@` mailbox is for email only." },
 };
-
-// APP_PROJECT_OVERRIDES removed 2026-05-28: every FAS app on the storefront
-// is on Path B (D1 routes → R2). No slug still legitimately uses a legacy
-// CF Pages project. legacyFallback() and legacyProjectName() are gone too —
-// see the simplified fetch handler below.
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -82,21 +65,15 @@ export default {
     const dot = cleaned.indexOf(".");
     const slug = dot > 0 ? cleaned.slice(0, dot) : "";
 
-    // Platform-infra subdomains short-circuit before app routing. They use
-    // different naming than apps, so the legacy app-fallback would send them
-    // to a non-existent CF Pages project (real bug we hit on 2026-05-21).
+    // Platform-infra subdomains short-circuit before app routing.
     if (slug in PLATFORM_SUBDOMAINS) {
       return await dispatchPlatform(req, env, slug, host);
     }
 
-    // Path B route — if the slug is registered in D1, serve from R2.
+    // Serve from R2 if the slug is registered in D1.
     const route = await resolveRoute(env.DB, host);
     if (route) return await serve(env.APPS, route, url, req.method, req.headers.get("if-none-match"), ctx);
 
-    // No legacy fallback — every registered FAS app is on Path B as of
-    // 2026-05-28. Unknown slugs get a clean 404; the previous CF Pages
-    // proxy created confusing 530s for every typo (and the 100/account
-    // CF Pages cap was a scaling dead-end for the free side anyway).
     return notFound(host);
   },
 };

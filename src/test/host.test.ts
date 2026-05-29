@@ -99,14 +99,6 @@ describe("contentType", () => {
   });
 });
 
-// The legacyProjectName + legacyFallback wiring isn't exported, so we can't
-// unit-test it directly without refactoring (the function lives in index.ts).
-// The proxy behavior is exercised by the live-deployed Worker against real
-// `<slug>.freeappstore.online` URLs whose apps still live on CF Pages —
-// any of `language`, `math`, `quiz`, `books`, `music` returning HTTP 200
-// confirms the path works. If a regression breaks the fallback, those URLs
-// return the Worker's 404 instead — the user-visible symptom that flagged
-// the original bug.
 // ---- Security headers: defense-in-depth baseline applied to every app. ----
 // The analytics pipeline (loader, beacon, BYO tags) depends on these directives
 // being permissive enough to allow the platform origins. A future tightening
@@ -158,7 +150,7 @@ describe("securityHeaders", () => {
   it("frame-ancestors allows storefront preview iframes only", () => {
     const csp = html.get("content-security-policy") ?? "";
     expect(csp).toContain("frame-ancestors 'self' https://freeappstore.online");
-    expect(csp).toContain("https://freeappstore.pages.dev");
+    expect(csp).not.toContain("pages.dev");
     expect(csp).toContain("https://*.freeappstore.online");
   });
 
