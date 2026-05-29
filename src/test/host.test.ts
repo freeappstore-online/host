@@ -204,24 +204,3 @@ describe("etagsMatch (304 Not Modified)", () => {
   });
 });
 
-describe("legacy fallback (integration shape only)", () => {
-  it("documents the (slug, zone) → CF Pages project naming", () => {
-    // Mirror of legacyProjectName in src/index.ts — keep in sync.
-    const cases = [
-      ["language", "freeappstore.online", "freelanguageapp"],
-      ["chess", "freegamestore.online", "chess"],
-      ["spending", "proappstore.online", "proappstore-spending"],
-    ];
-    for (const [slug, zone, expected] of cases) {
-      // Just asserting the projection matches what STORE_CONFIG produces in
-      // fas/admin/src/publish.ts. If admin's naming convention changes, this
-      // breaks and tells you the host worker needs the same update.
-      let projected: string | null;
-      if (zone === "freeappstore.online") projected = `free${slug}app`;
-      else if (zone === "freegamestore.online") projected = slug;
-      else if (zone === "proappstore.online") projected = `proappstore-${slug}`;
-      else projected = null;
-      expect(projected).toBe(expected);
-    }
-  });
-});
