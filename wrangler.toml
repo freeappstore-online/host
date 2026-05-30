@@ -10,6 +10,16 @@ workers_dev = false
 pattern = "*.freeappstore.online/*"
 zone_name = "freeappstore.online"
 
+# Custom domain for AgentCoder app — served from the same R2 bucket,
+# resolved via D1 routes row (slug=agentcoder, zone=space).
+[[routes]]
+pattern = "agentcoder.space/*"
+zone_name = "agentcoder.space"
+
+[[routes]]
+pattern = "www.agentcoder.space/*"
+zone_name = "agentcoder.space"
+
 # `*.progamestore.online/*` was removed 2026-05-28 (PLAN-ARCH-CLEANUP follow-up).
 # The FAS host worker has no code paths for the PGS zone — legacyProjectName()
 # returns null for it. The wildcard was returning misleading "no app registered

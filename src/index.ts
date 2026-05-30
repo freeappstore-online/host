@@ -66,8 +66,16 @@ export default {
     const slug = dot > 0 ? cleaned.slice(0, dot) : "";
 
     // Platform-infra subdomains short-circuit before app routing.
-    if (slug in PLATFORM_SUBDOMAINS) {
+    // Platform-infra subdomains short-circuit before app routing.
+    // Only applies to freeappstore.online zone — custom domains skip this.
+    const zone = dot > 0 ? cleaned.slice(dot + 1) : "";
+    if (zone === "freeappstore.online" && slug in PLATFORM_SUBDOMAINS) {
       return await dispatchPlatform(req, env, slug, host);
+    }
+
+    // www.customdomain → redirect to apex
+    if (slug === "www" && zone !== "freeappstore.online") {
+      return Response.redirect(`https://${zone}${url.pathname}${url.search}`, 301);
     }
 
     // Serve from R2 if the slug is registered in D1.
