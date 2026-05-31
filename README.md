@@ -1,8 +1,8 @@
 # freeappstore-host
 
 The Worker that serves every published FAS app from R2. Replaces the per-app
-CF Pages project model with one Worker on `*.freeappstore.online`, removing
-the 100-projects-per-account CF Pages ceiling.
+R2 project model with one Worker on `*.freeappstore.online`, removing
+the 100-projects-per-account R2 ceiling.
 
 ## How it works
 
@@ -35,7 +35,7 @@ policy is centralized here. Cache: 60s for HTML, 1 year immutable for assets.
 
 ## Secrets needed
 
-Two surfaces consume credentials related to Path B:
+Two surfaces consume credentials related to R2 hosting:
 
 | Where | Secrets | Notes |
 |---|---|---|
