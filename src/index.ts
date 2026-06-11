@@ -33,6 +33,8 @@ type PlatformDispatch =
 
 const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   api: { type: "service", binding: "API" },
+  docs: { type: "service", binding: "KB" },
+  kb: { type: "service", binding: "KB" },
   compliance: { type: "proxy", target: "https://compliance.pages.dev" },
   // `publish.freeappstore.online/*` is served by freeappstore-publisher
   // (more-specific Worker Route — beats the wildcard that lands here).

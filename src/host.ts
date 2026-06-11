@@ -6,6 +6,10 @@ export interface Env {
    *  custom_domain binding, so we dispatch reserved subdomains via this
    *  binding rather than letting the request fall through. */
   API?: Fetcher;
+  /** Service binding to the KB host Worker (freeappstore-kb-host), which serves
+   *  docs.freeappstore.online and kb.freeappstore.online. Same wildcard
+   *  preemption issue as the API binding above. */
+  KB?: Fetcher;
 }
 
 export interface Route {

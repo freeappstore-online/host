@@ -44,6 +44,12 @@ bucket_name = "fas-apps"
 binding = "API"
 service = "freeappstore-api"
 
+# Service binding to the KB host Worker. Same wildcard preemption issue —
+# docs.freeappstore.online and kb.freeappstore.online are dispatched here.
+[[services]]
+binding = "KB"
+service = "freeappstore-kb-host"
+
 # Reuses the existing fas D1 database (same one admin uses). The new `routes`
 # table lives alongside whatever else is in there; the schema is in
 # migrations/0001_create_routes.sql.
