@@ -39,7 +39,7 @@ const PLATFORM_SUBDOMAINS: Record<string, PlatformDispatch> = {
   // `publish.freeappstore.online/*` is served by freeappstore-publisher
   // (more-specific Worker Route — beats the wildcard that lands here).
   // It exposes /api/me, /api/create called by
-  // create.freeappstore.online/publish. If publisher is ever decommissioned,
+  // console.freeappstore.online/publish. If publisher is ever decommissioned,
   // those endpoints need to land on FAS platform backend first, and only
   // then can a redirect entry be added here (keyed `publish`, not
   // `publisher` — the former was a typo that meant the entry never fired).
